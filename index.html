@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Feedback Formatter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen p-6">
+        <div class="max-w-6xl mx-auto">
+            <!-- Header -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">QA Feedback Formatter</h1>
+                <p class="text-gray-600 text-sm">Convert shorthand feedback into properly formatted text for JotForm</p>
+            </div>
+
+            <!-- Main Grid -->
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Input Section -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold text-gray-700">Input (Shorthand)</h2>
+                        <button onclick="clearAll()" class="text-sm text-gray-500 hover:text-gray-700">
+                            Clear
+                        </button>
+                    </div>
+                    <textarea
+                        id="input"
+                        placeholder="Paste your shorthand here...
+
+PRICING EXAMPLE:
+AMZ_3PL_20251210_007 - Sortable Home Improvement
+B00134N50Y $59.28 $10.21
+B0CQVB716R $69.99 $33.99
+
+DEEP SKU EXAMPLE:
+DEEP SKU
+PTBH63903
+LPJF766521
+Lasko Ceramic Tower Heater
+140
+11.87%
+
+RETAIL RANGE EXAMPLE:
+RETAIL RANGE MIN
+60000-95000
+51000-109250
+46617
+
+LOTTING EXAMPLE:
+LOTTING
+10
+15
+BEDDING,5
+FURNITURE,3"
+                        class="w-full h-96 p-3 border border-gray-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    ></textarea>
+                    <button
+                        onclick="formatFeedback()"
+                        class="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                    >
+                        Format Feedback
+                    </button>
+                </div>
+
+                <!-- Output Section -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold text-gray-700">Output (Formatted)</h2>
+                        <button
+                            id="copyBtn"
+                            onclick="copyToClipboard()"
+                            class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+                            style="display: none;"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span id="copyText">Copy</span>
+                        </button>
+                    </div>
+                    <div
+                        id="output"
+                        class="w-full h-96 p-3 border border-gray-300 rounded-md bg-gray-50 font-mono text-sm overflow-auto whitespace-pre-wrap"
+                    >Formatted feedback will appear here...</div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="bg-blue-50 rounded-lg p-4 mt-6">
+                <h3 class="font-semibold text-blue-900 mb-2">Supported Feedback Types:</h3>
+                <ul class="text-sm text-blue-800 space-y-2">
+                    <li><strong>PRICING:</strong> Start with lot name (containing AMZ_), then list ASINs with manifest and correct prices</li>
+                    <li><strong>DEEP SKU:</strong> Start with "DEEP SKU", then Pallet ID, Item #, Description, Quantity, Percentage</li>
+                    <li><strong>RETAIL RANGE:</strong> Start with "RETAIL RANGE MIN/MAX/CONTRACT/PALLET", then relevant values</li>
+                    <li><strong>LOTTING:</strong> Start with "LOTTING", then max allowed, actual total, and categories with counts</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        function formatPricing(lines) {
+            let results = [];
+            let currentLot = '';
+            let items = [];
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+
+                if (line.includes('AMZ_')) {
+                    if (currentLot && items.length > 0) {
+                        let section = currentLot + '\n';
+                        items.forEach(item => {
+                            section += `Pricing issue found for ASIN ${item.asin}. Showing as $${item.manifestPrice} on the manifest, and should be $${item.correctPrice}.\n`;
+                        });
+                        results.push(section.trim());
+                    }
+                    currentLot = line;
+                    items = [];
+                } else if (/B0[A-Z0-9]+/.test(line)) {
+                    const parts = line.split(/\s+/);
+                    if (parts.length >= 3) {
+                        const asin = parts[0];
+                        const manifestPrice = parts[1].replace('$', '');
+                        const correctPrice = parts[2].replace('$', '');
+                        items.push({ asin, manifestPrice, correctPrice });
+                    }
+                }
+            }
+
+            if (currentLot && items.length > 0) {
+                let section = currentLot + '\n';
+                items.forEach(item => {
+                    section += `Pricing issue found for ASIN ${item.asin}. Showing as $${item.manifestPrice} on the manifest, and should be $${item.correctPrice}.\n`;
+                });
+                results.push(section.trim());
+            }
+
+            return results.join('\n\n');
+        }
+
+        function formatDeepSKU(lines) {
+            if (lines.length < 6) return 'Error: Deep SKU requires at least 6 lines';
+            
+            const palletId = lines[1].trim();
+            const itemNum = lines[2].trim();
+            const description = lines[3].trim();
+            const quantity = lines[4].trim();
+            const percentage = lines[5].trim();
+
+            return `The following pallet was flagged for deep SKU:
+NOTE: This item accounts for ${percentage} of the lots' overall retail value.
+Pallet ID: ${palletId}
+Item #: ${itemNum}
+Description: ${description}
+Quantity: ${quantity}`;
+        }
+
+        function formatRetailRange(lines, type) {
+            if (type === 'MIN' || type === 'MAX') {
+                if (lines.length < 4) return 'Error: Retail Range MIN/MAX requires 4 lines';
+                const range = lines[1].trim();
+                const absoluteRange = lines[2].trim();
+                const actual = lines[3].trim();
+                
+                const [min, max] = range.split('-');
+                const [absMin, absMax] = absoluteRange.split('-');
+                
+                const minFormatted = formatNumber(min);
+                const maxFormatted = formatNumber(max);
+                const absMinFormatted = formatNumber(absMin);
+                const absMaxFormatted = formatNumber(absMax);
+                const actualFormatted = formatNumber(actual);
+                
+                const exceedType = type === 'MIN' ? 'minimum' : 'maximum';
+                
+                return `Retail range for this inventory type is $${minFormatted} - $${maxFormatted}. The absolute minimum and maximum with 15% variance is $${absMinFormatted} - $${absMaxFormatted}. However, this lot exceeds the absolute ${exceedType} with a total retail of $${actualFormatted}.`;
+            } else if (type === 'CONTRACT') {
+                if (lines.length < 4) return 'Error: Retail Range CONTRACT requires 4 lines';
+                const minimum = lines[1].trim();
+                const minWithVariance = lines[2].trim();
+                const actual = lines[3].trim();
+                
+                const minFormatted = formatNumber(minimum);
+                const minVarFormatted = formatNumber(minWithVariance);
+                const actualFormatted = formatNumber(actual);
+                
+                return `The minimum retail price for this contract type is $${minFormatted} or $${minVarFormatted}, with a 15% threshold for variance. However, this lot has an overall retail of $${actualFormatted}.`;
+            } else if (type === 'PALLET') {
+                if (lines.length < 6) return 'Error: Retail Range PALLET requires 6 lines';
+                const range = lines[1].trim();
+                const avgPerPallet = lines[2].trim();
+                const numPallets = lines[3].trim();
+                const expected = lines[4].trim();
+                const actual = lines[5].trim();
+                
+                const [min, max] = range.split('-');
+                const minFormatted = formatNumber(min);
+                const maxFormatted = formatNumber(max);
+                const avgFormatted = formatNumber(avgPerPallet);
+                const expectedFormatted = formatNumber(expected);
+                const actualFormatted = formatNumber(actual);
+                
+                const truckloadType = numPallets === '12' ? 'half truckload' : 'truckload';
+                
+                return `Retail range for this inventory type is $${minFormatted} – $${maxFormatted} based on an average retail of $${avgFormatted} per pallet for a ${numPallets}-pallet (${truckloadType}) lot, totaling an expected retail of $${expectedFormatted}. However, this lot falls below the absolute minimum with a total retail of $${actualFormatted}.`;
+            }
+        }
+
+        function formatLotting(lines) {
+            if (lines.length < 4) return 'Error: Lotting requires at least 4 lines';
+            
+            const maxAllowed = lines[1].trim();
+            const actualTotal = lines[2].trim();
+            
+            let categories = [];
+            for (let i = 3; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line) {
+                    const parts = line.split(',');
+                    if (parts.length === 2) {
+                        categories.push({ name: parts[0].trim(), count: parts[1].trim() });
+                    }
+                }
+            }
+            
+            let categoryText = categories.map(cat => `${cat.name} - ${cat.count}`).join('\n');
+            
+            return `Lotting guidelines state to include no more than ${maxAllowed} pallets of Home Decor. However, the following categories and their corresponding pallet counts are present, totaling to ${actualTotal} Home Decor pallets for this lot.
+${categoryText}`;
+        }
+
+        function formatFeedback() {
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            const copyBtn = document.getElementById('copyBtn');
+
+            if (!input.trim()) {
+                output.textContent = 'Please enter some shorthand feedback first.';
+                copyBtn.style.display = 'none';
+                return;
+            }
+
+            const lines = input.trim().split('\n');
+            let result = '';
+
+            // Detect feedback type
+            if (input.includes('DEEP SKU')) {
+                const deepSkuStart = lines.findIndex(line => line.trim() === 'DEEP SKU');
+                const deepSkuLines = lines.slice(deepSkuStart);
+                result = formatDeepSKU(deepSkuLines);
+            } else if (input.includes('RETAIL RANGE')) {
+                const retailStart = lines.findIndex(line => line.trim().startsWith('RETAIL RANGE'));
+                const retailLines = lines.slice(retailStart);
+                const firstLine = retailLines[0].trim();
+                
+                if (firstLine === 'RETAIL RANGE MIN') {
+                    result = formatRetailRange(retailLines, 'MIN');
+                } else if (firstLine === 'RETAIL RANGE MAX') {
+                    result = formatRetailRange(retailLines, 'MAX');
+                } else if (firstLine === 'RETAIL RANGE CONTRACT') {
+                    result = formatRetailRange(retailLines, 'CONTRACT');
+                } else if (firstLine === 'RETAIL RANGE PALLET') {
+                    result = formatRetailRange(retailLines, 'PALLET');
+                }
+            } else if (input.includes('LOTTING')) {
+                const lottingStart = lines.findIndex(line => line.trim() === 'LOTTING');
+                const lottingLines = lines.slice(lottingStart);
+                result = formatLotting(lottingLines);
+            } else if (input.includes('AMZ_')) {
+                result = formatPricing(lines);
+            } else {
+                result = 'Error: Could not detect feedback type. Make sure to use proper trigger words (AMZ_, DEEP SKU, RETAIL RANGE, LOTTING)';
+            }
+
+            output.textContent = result;
+            copyBtn.style.display = 'flex';
+        }
+
+        function copyToClipboard() {
+            const output = document.getElementById('output').textContent;
+            const copyText = document.getElementById('copyText');
+            
+            navigator.clipboard.writeText(output).then(() => {
+                copyText.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyText.textContent = 'Copy';
+                }, 2000);
+            });
+        }
+
+        function clearAll() {
+            document.getElementById('input').value = '';
+            document.getElementById('output').textContent = 'Formatted feedback will appear here...';
+            document.getElementById('copyBtn').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
