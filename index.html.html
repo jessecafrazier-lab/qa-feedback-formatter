@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Feedback Formatter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen p-6">
+        <div class="max-w-6xl mx-auto">
+            <!-- Header -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">QA Feedback Formatter</h1>
+                <p class="text-gray-600 text-sm">Paste your shorthand pricing feedback and convert it to proper format</p>
+            </div>
+
+            <!-- Main Grid -->
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Input Section -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold text-gray-700">Input (Shorthand)</h2>
+                        <button onclick="clearAll()" class="text-sm text-gray-500 hover:text-gray-700">
+                            Clear
+                        </button>
+                    </div>
+                    <textarea
+                        id="input"
+                        placeholder="Paste your shorthand here...
+
+Example:
+AMZ_3PL_20251210_007 - Sortable Home Improvement, 1/2 TL (KY)
+B00134N50Y	$59.28 $10.21
+B0CQVB716R	$69.99 $33.99"
+                        class="w-full h-96 p-3 border border-gray-300 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    ></textarea>
+                    <button
+                        onclick="formatFeedback()"
+                        class="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                    >
+                        Format Feedback
+                    </button>
+                </div>
+
+                <!-- Output Section -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-lg font-semibold text-gray-700">Output (Formatted)</h2>
+                        <button
+                            id="copyBtn"
+                            onclick="copyToClipboard()"
+                            class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+                            style="display: none;"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span id="copyText">Copy</span>
+                        </button>
+                    </div>
+                    <div
+                        id="output"
+                        class="w-full h-96 p-3 border border-gray-300 rounded-md bg-gray-50 font-mono text-sm overflow-auto whitespace-pre-wrap"
+                    >Formatted feedback will appear here...</div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="bg-blue-50 rounded-lg p-4 mt-6">
+                <h3 class="font-semibold text-blue-900 mb-2">How to use:</h3>
+                <ol class="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                    <li>Paste your shorthand feedback in the left box</li>
+                    <li>Click "Format Feedback" to convert it</li>
+                    <li>Review the formatted output on the right</li>
+                    <li>Click "Copy" to copy the formatted text</li>
+                    <li>Paste into your JotForm</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function formatLotSection(lotName, items) {
+            let section = lotName + '\n';
+            items.forEach(item => {
+                section += `Pricing issue found for ASIN ${item.asin}. Showing as $${item.manifestPrice} on the manifest, and should be $${item.correctPrice}.\n`;
+            });
+            return section.trim();
+        }
+
+        function formatPricingFeedback(text) {
+            const lines = text.trim().split('\n');
+            let results = [];
+            let currentLot = '';
+            let items = [];
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+
+                // Check if this is a lot header (contains "AMZ_")
+                if (line.includes('AMZ_')) {
+                    // If we have a previous lot with items, format it
+                    if (currentLot && items.length > 0) {
+                        results.push(formatLotSection(currentLot, items));
+                    }
+                    // Start new lot
+                    currentLot = line;
+                    items = [];
+                } else if (line.includes('\t') || /B0[A-Z0-9]+/.test(line)) {
+                    // This is an item line with ASIN and prices
+                    const parts = line.split(/\s+/);
+                    if (parts.length >= 3) {
+                        const asin = parts[0];
+                        const manifestPrice = parts[1].replace('$', '');
+                        const correctPrice = parts[2].replace('$', '');
+                        items.push({ asin, manifestPrice, correctPrice });
+                    }
+                }
+            }
+
+            // Don't forget the last lot
+            if (currentLot && items.length > 0) {
+                results.push(formatLotSection(currentLot, items));
+            }
+
+            return results.join('\n\n');
+        }
+
+        function formatFeedback() {
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            const copyBtn = document.getElementById('copyBtn');
+
+            if (!input.trim()) {
+                output.textContent = 'Please enter some shorthand feedback first.';
+                copyBtn.style.display = 'none';
+                return;
+            }
+
+            const formatted = formatPricingFeedback(input);
+            output.textContent = formatted;
+            copyBtn.style.display = 'flex';
+        }
+
+        function copyToClipboard() {
+            const output = document.getElementById('output').textContent;
+            const copyText = document.getElementById('copyText');
+            
+            navigator.clipboard.writeText(output).then(() => {
+                copyText.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyText.textContent = 'Copy';
+                }, 2000);
+            });
+        }
+
+        function clearAll() {
+            document.getElementById('input').value = '';
+            document.getElementById('output').textContent = 'Formatted feedback will appear here...';
+            document.getElementById('copyBtn').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
